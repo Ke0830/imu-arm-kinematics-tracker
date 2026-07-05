@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端 v2 纯净连接框架</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- 本地引入 Three.js 依赖 -->
+    <script src="three.min.js"></script>
+    <script src="OrbitControls.js"></script>
+</head>
+<body>
+    <div class="debug-container">
+        <!-- 左侧：控制面板与参数输入 -->
+        <div class="sidebar">
+            <div class="panel-header">
+                <h2>🔌 蓝牙连接与标定框架 (v2)</h2>
+                <p>用于双环配对、尺寸配置及标定校准，屏蔽任何运动映射算法</p>
+            </div>
+
+            <!-- ESP32 双节点标定状态机卡片 -->
+            <div class="sensor-card" id="card-calibration">
+                <h3>⚖️ 双节点同步标定状态机</h3>
+                <button class="btn-connect" id="btn-calibrate-auto" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">开始自动检测标定</button>
+                <div id="calibration-status" style="font-weight: 700; margin-top: 4px; text-align: center; color: var(--text-sub);">状态: 空闲 (STATE_IDLE)</div>
+                <div id="calib-metrics" style="font-size: 0.8rem; color: var(--text-sub); display: flex; flex-direction: column; gap: 4px; margin-top: 8px; border-top: 1px solid #1e293b; padding-top: 8px;">
+                    <div style="font-weight: 600; color: var(--text-main); margin-bottom: 2px;">💪 大臂节点检测:</div>
+                    <div style="margin-left: 8px;">方差 G_var: <span class="data-val" id="val-gvar-upper">--</span> (门限: 3.0)</div>
+                    <div style="margin-left: 8px;">重力 ay: <span class="data-val" id="val-ay-upper">--</span> g (门限: 1±0.5)</div>
+                    
+                    <div style="font-weight: 600; color: var(--text-main); margin-top: 6px; margin-bottom: 2px;">✋ 小臂节点检测:</div>
+                    <div style="margin-left: 8px;">方差 G_var: <span class="data-val" id="val-gvar-fore">--</span> (门限: 3.0)</div>
+                    <div style="margin-left: 8px;">重力 ay: <span class="data-val" id="val-ay-fore">--</span> g (门限: 1±0.5)</div>
+                </div>
+            </div>
+
+            <!-- 双节点解算坐标卡片 -->
+            <div class="sensor-card" id="card-coords">
+                <h3>📍 空间解算坐标 (X, Y, Z)</h3>
+                <div style="font-size: 0.85rem; font-weight: 600; color: var(--accent-blue); margin-bottom: 4px;">💪 肘部 (Elbow):</div>
+                <div class="data-display" style="margin-bottom: 12px;">
+                    <div><span>X (左右):</span> <span class="data-val" id="val-coord-x">0.000</span> m</div>
+                    <div><span>Y (上下):</span> <span class="data-val" id="val-coord-y">-0.300</span> m</div>
+                    <div><span>Z (前后):</span> <span class="data-val" id="val-coord-z">0.000</span> m</div>
+                </div>
+                <div style="font-size: 0.85rem; font-weight: 600; color: #ff007f; margin-bottom: 4px;">✋ 手腕 (Wrist):</div>
+                <div class="data-display">
+                    <div><span>X (左右):</span> <span class="data-val" id="val-wrist-x">0.000</span> m</div>
+                    <div><span>Y (上下):</span> <span class="data-val" id="val-wrist-y">-0.560</span> m</div>
+                    <div><span>Z (前后):</span> <span class="data-val" id="val-wrist-z">0.000</span> m</div>
+                </div>
+            </div>
+            
+            <!-- 大臂传感器卡片 -->
+            <div class="sensor-card" id="card-upper">
+                <h3>💪 大臂传感器</h3>
+                <div class="status-badge status-disconnected" id="status-upper">未连接</div>
+                <button class="btn-connect" id="btn-connect-upper">连接蓝牙</button>
+                <div class="data-display">
+                    <div><span>X轴 (外展/Roll):</span> <span class="data-val" id="val-upper-r">--</span>°</div>
+                    <div><span>Y轴 (自旋/Pitch):</span> <span class="data-val" id="val-upper-p">--</span>°</div>
+                    <div><span>Z轴 (前后/Yaw):</span> <span class="data-val" id="val-upper-y">--</span>°</div>
+                </div>
+            </div>
+
+            <!-- 小臂传感器卡片 -->
+            <div class="sensor-card" id="card-fore">
+                <h3>✋ 小臂传感器</h3>
+                <div class="status-badge status-disconnected" id="status-fore">未连接</div>
+                <button class="btn-connect" id="btn-connect-fore">连接蓝牙</button>
+                <div class="data-display">
+                    <div><span>X轴 (外展/Roll):</span> <span class="data-val" id="val-fore-r">--</span>°</div>
+                    <div><span>Y轴 (自旋/Pitch):</span> <span class="data-val" id="val-fore-p">--</span>°</div>
+                    <div><span>Z轴 (前后/Yaw):</span> <span class="data-val" id="val-fore-y">--</span>°</div>
+                </div>
+            </div>
+
+            <!-- 肢体与安装参数配置 -->
+            <div class="sensor-card" id="card-config">
+                <h3>📏 肢体与传感器参数</h3>
+                <div class="config-group">
+                    <div class="config-item">
+                        <label>大臂长度 (cm):</label>
+                        <input type="number" id="input-upper-len" value="30" min="10" max="60">
+                    </div>
+                    <div class="config-item">
+                        <label>小臂长度 (cm):</label>
+                        <input type="number" id="input-fore-len" value="26" min="10" max="60">
+                    </div>
+                    <div class="config-item">
+                        <label>大臂传感器离肘尖 (cm):</label>
+                        <input type="number" id="input-upper-pos" value="5" min="0" max="30">
+                    </div>
+                    <div class="config-item">
+                        <label>小臂传感器离腕骨 (cm):</label>
+                        <input type="number" id="input-fore-pos" value="3" min="0" max="30">
+                    </div>
+                </div>
+            </div>
+            
+            <div class="info-section">
+                <h4>📌 框架调试指南</h4>
+                <ul>
+                    <li>T-pose 标定：大臂小臂平举伸直。</li>
+                    <li>3D 视图模型为纯静态展示，不会有任何骨骼旋转。</li>
+                    <li>改变输入框数据，3D 图中的大臂/小臂长度和绿色传感器块会同步伸缩移动。</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 右侧：3D 静态人体局部模型展示 -->
+        <div class="viewport" id="canvas-holder">
+            <div class="viewport-badge">静态 3D 模型框架 (不跟随手环旋转)</div>
+        </div>
+    </div>
+
+    <!-- 载入应用逻辑 -->
+    <script src="app.js"></script>
+</body>
+</html>
